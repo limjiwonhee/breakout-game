@@ -2,8 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>벽돌깨기 (Breakout)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>지원히의 벽돌깨기</title>
 <style>
   /* ===== 전체 레이아웃 ===== */
   * {
@@ -71,6 +71,8 @@
     background-color: #0d0d1a;
     border: 3px solid #4a4a6a;
     border-radius: 10px;
+    /* 터치 드래그 시 화면 스크롤/확대 등 기본 동작이 발생하지 않도록 함 */
+    touch-action: none;
   }
 
   /* 게임 클리어 / 게임 오버 시 캔버스 위에 덮어씌우는 메시지 화면 */
@@ -156,6 +158,15 @@
     color: #fff;
     cursor: pointer;
     transition: background 0.15s ease;
+    /* 모바일에서도 누르기 쉽도록 최소 터치 영역(44px) 확보 */
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   button:hover:not(:disabled), select:hover {
@@ -172,11 +183,42 @@
     color: #aaaab0;
     text-align: center;
   }
+
+  /* 게임 시작 전에만 표시되는 터치 조작 안내 */
+  .touch-hint {
+    color: #ffd166;
+  }
+
+  .touch-hint.hidden {
+    display: none;
+  }
+
+  /* ===== 좁은 화면(모바일) 대응 ===== */
+  @media (max-width: 480px) {
+    h1 {
+      font-size: 1.4rem;
+      letter-spacing: 2px;
+    }
+
+    .info-bar {
+      font-size: 0.9rem;
+      padding: 6px 10px;
+    }
+
+    .controls {
+      gap: 8px;
+    }
+
+    button, select {
+      padding: 8px 12px;
+      font-size: 0.9rem;
+    }
+  }
 </style>
 </head>
 <body>
   <div class="game-container">
-    <h1>벽돌깨기</h1>
+    <h1>지원히의 벽돌깨기</h1>
 
     <!-- 점수 / 라이프 / 난이도 표시 영역 -->
     <div class="info-bar">
@@ -214,8 +256,11 @@
     </div>
 
     <p class="hint">
-      ← → 방향키 또는 마우스 이동으로 패들을 조작하세요. (레이저 패들 상태에서는 Space로 발사)
+      ← → 방향키, 마우스 이동 또는 화면 터치 드래그로 패들을 조작하세요. (레이저 패들 상태에서는 Space 또는 화면 터치로 발사)
     </p>
+
+    <!-- 게임 시작 전에만 표시되는 모바일 터치 조작 안내 -->
+    <p id="touchHint" class="hint touch-hint">터치해서 좌우로 움직이세요</p>
   </div>
 
   <script>
@@ -242,6 +287,7 @@
     const messageTitle = document.getElementById('messageTitle');
     const messageScore = document.getElementById('messageScore');
     const powerupStatusEl = document.getElementById('powerupStatus');
+    const touchHint = document.getElementById('touchHint');
 
     // 난이도별 공의 초기 속력 (값이 클수록 빠름)
     const DIFFICULTY_SPEEDS = {
@@ -444,6 +490,15 @@
     // 메시지 화면을 숨김
     function hideMessage() {
       messageOverlay.classList.add('hidden');
+    }
+
+    // 터치 조작 안내 문구는 게임이 시작되기 전(대기/게임오버/클리어 상태)에만 보여준다.
+    function updateTouchHintVisibility() {
+      if (isRunning) {
+        touchHint.classList.add('hidden');
+      } else {
+        touchHint.classList.remove('hidden');
+      }
     }
 
     // 현재 활성화된 파워업들을 화면 하단 상태 바에 뱃지로 표시한다.
@@ -1090,6 +1145,7 @@
 
       showMessage('Game Over', `최종 점수: ${score}`);
       clearActivePowerUps();
+      updateTouchHintVisibility();
 
       startBtn.textContent = '다시 시작';
       pauseBtn.disabled = true;
@@ -1102,6 +1158,7 @@
 
       showMessage('Clear!', `최종 점수: ${score}`);
       clearActivePowerUps();
+      updateTouchHintVisibility();
 
       startBtn.textContent = '다시 시작';
       pauseBtn.disabled = true;
@@ -1151,6 +1208,7 @@
         isPaused = false;
         pauseBtn.disabled = false;
         pauseBtn.textContent = '일시정지';
+        updateTouchHintVisibility();
         gameLoop();
       }
     });
@@ -1183,6 +1241,7 @@
 
       resetGame();
       drawScene();
+      updateTouchHintVisibility();
     });
 
     // 난이도 변경: 현재 진행 방향과 슬로우볼 비율은 유지하면서 기준 속력만 조정한다.
@@ -1239,11 +1298,46 @@
       if (paddle.x + paddle.width > CANVAS_WIDTH) paddle.x = CANVAS_WIDTH - paddle.width;
     });
 
+    // 터치 좌표를 캔버스 내부 좌표로 변환해 패들을 그 위치로 이동시킨다.
+    // (마우스 핸들러와 동일한 방식으로 화면 크기 ↔ 내부 해상도 비율을 보정)
+    function movePaddleToTouch(touch) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = CANVAS_WIDTH / rect.width;
+      const touchX = (touch.clientX - rect.left) * scaleX;
+
+      paddle.x = touchX - paddle.width / 2;
+
+      if (paddle.x < 0) paddle.x = 0;
+      if (paddle.x + paddle.width > CANVAS_WIDTH) paddle.x = CANVAS_WIDTH - paddle.width;
+    }
+
+    // 터치 시작: 패들을 터치 위치로 이동시키고, 레이저 패들 상태라면 탭으로 레이저를 발사한다.
+    // preventDefault()로 화면 스크롤/확대 등 브라우저 기본 동작을 막는다.
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 0) return;
+
+      movePaddleToTouch(e.touches[0]);
+
+      if (activePowerUps.laser && isRunning && !isPaused) {
+        fireLaser();
+      }
+    }, { passive: false });
+
+    // 터치한 채로 드래그하면 패들이 손가락을 따라 좌우로 이동한다.
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 0) return;
+
+      movePaddleToTouch(e.touches[0]);
+    }, { passive: false });
+
     // ===================================================================
     // 16. 초기 화면 표시
     // ===================================================================
     resetGame();
     drawScene();
+    updateTouchHintVisibility();
   </script>
 </body>
 </html>
