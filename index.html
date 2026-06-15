@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>벽돌깨기 (Breakout)</title>
+<style>
+  /* ===== 전체 레이아웃 ===== */
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 16px;
+    font-family: "Malgun Gothic", "Segoe UI", sans-serif;
+    background: linear-gradient(135deg, #1b1b2f, #2b2b45);
+    color: #f1f1f1;
+  }
+
+  .game-container {
+    width: 100%;
+    max-width: 700px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    letter-spacing: 4px;
+    text-align: center;
+  }
+
+  /* ===== 상단 정보 바 (점수 / 라이프 / 난이도) ===== */
+  .info-bar {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 1.05rem;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px 14px;
+    border-radius: 8px;
+  }
+
+  .info-bar span {
+    font-weight: bold;
+    color: #ffd166;
+  }
+
+  /* ===== 게임 캔버스 영역 ===== */
+  .canvas-wrapper {
+    position: relative;
+    width: 100%;
+  }
+
+  /* 캔버스 자체 해상도는 640x480 으로 고정하고,
+     CSS로 화면 너비에 맞춰 비율(4:3)을 유지하며 확대/축소한다. */
+  #gameCanvas {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background-color: #0d0d1a;
+    border: 3px solid #4a4a6a;
+    border-radius: 10px;
+  }
+
+  /* 게임 클리어 / 게임 오버 시 캔버스 위에 덮어씌우는 메시지 화면 */
+  .message-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.65);
+    border-radius: 10px;
+    text-align: center;
+  }
+
+  .message-overlay.hidden {
+    display: none;
+  }
+
+  #messageTitle {
+    font-size: 2.4rem;
+    font-weight: bold;
+  }
+
+  #messageScore {
+    font-size: 1.2rem;
+    color: #ffd166;
+  }
+
+  /* ===== 파워업 상태 표시 바 ===== */
+  .powerup-status {
+    width: 100%;
+    min-height: 30px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .powerup-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: #1b1b2f;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.45);
+    animation: badge-pulse 1.2s ease-in-out infinite;
+  }
+
+  .powerup-badge .badge-time {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 8px;
+    padding: 1px 6px;
+    color: #fff;
+  }
+
+  @keyframes badge-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+
+  /* ===== 조작 버튼 / 난이도 선택 ===== */
+  .controls {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  button, select {
+    padding: 10px 18px;
+    font-size: 1rem;
+    border: none;
+    border-radius: 6px;
+    background: #4a4a6a;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  button:hover:not(:disabled), select:hover {
+    background: #5e5e8a;
+  }
+
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .hint {
+    font-size: 0.85rem;
+    color: #aaaab0;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="game-container">
+    <h1>벽돌깨기</h1>
+
+    <!-- 점수 / 라이프 / 난이도 표시 영역 -->
+    <div class="info-bar">
+      <div>점수: <span id="scoreDisplay">0</span></div>
+      <div>라이프: <span id="livesDisplay">3</span></div>
+      <div>
+        난이도:
+        <select id="difficultySelect">
+          <option value="easy">쉬움</option>
+          <option value="normal" selected>보통</option>
+          <option value="hard">어려움</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 게임이 실제로 그려지는 캔버스 -->
+    <div class="canvas-wrapper">
+      <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+      <!-- 게임오버 / 클리어 시 표시되는 오버레이 메시지 -->
+      <div id="messageOverlay" class="message-overlay hidden">
+        <div id="messageTitle"></div>
+        <div id="messageScore"></div>
+      </div>
+    </div>
+
+    <!-- 현재 활성화된 파워업과 남은 시간을 보여주는 상태 바 -->
+    <div id="powerupStatus" class="powerup-status"></div>
+
+    <!-- 시작 / 일시정지 / 재시작 버튼 -->
+    <div class="controls">
+      <button id="startBtn">시작</button>
+      <button id="pauseBtn" disabled>일시정지</button>
+      <button id="restartBtn">재시작</button>
+    </div>
+
+    <p class="hint">
+      ← → 방향키 또는 마우스 이동으로 패들을 조작하세요. (레이저 패들 상태에서는 Space로 발사)
+    </p>
+  </div>
+
+  <script>
+    // ===================================================================
+    // 1. 기본 설정, DOM 요소, 상수
+    // ===================================================================
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // 캔버스의 "논리적" 크기 (실제 그림을 그릴 때 사용하는 좌표 기준)
+    // 화면에 보이는 크기는 CSS(aspect-ratio, width:100%)가 알아서 조절해준다.
+    const CANVAS_WIDTH = canvas.width;   // 640
+    const CANVAS_HEIGHT = canvas.height; // 480
+
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const livesDisplay = document.getElementById('livesDisplay');
+    const difficultySelect = document.getElementById('difficultySelect');
+
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const restartBtn = document.getElementById('restartBtn');
+
+    const messageOverlay = document.getElementById('messageOverlay');
+    const messageTitle = document.getElementById('messageTitle');
+    const messageScore = document.getElementById('messageScore');
+    const powerupStatusEl = document.getElementById('powerupStatus');
+
+    // 난이도별 공의 초기 속력 (값이 클수록 빠름)
+    const DIFFICULTY_SPEEDS = {
+      easy: 3,
+      normal: 4.5,
+      hard: 6.5
+    };
+
+    // 패들/공 관련 기본값
+    const DEFAULT_PADDLE_WIDTH = 100;
+    const WIDE_PADDLE_WIDTH = 160;   // Wide Paddle 파워업 적용 시 너비
+    const BALL_RADIUS = 8;
+    const MAX_BALLS = 6;             // 멀티볼이 너무 많아지지 않도록 제한
+    const SLOW_BALL_FACTOR = 0.55;   // Slow Ball 파워업 속도 배율
+
+    // 파티클(벽돌 파괴 효과) 관련 상수
+    const PARTICLE_COUNT_PER_BRICK = 10;
+
+    // 파워업 아이템 관련 상수
+    const POWERUP_DROP_CHANCE = 0.18; // 벽돌이 깨질 때 아이템이 떨어질 확률 (18%)
+    const POWERUP_ITEM_WIDTH = 46;
+    const POWERUP_ITEM_HEIGHT = 22;
+    const POWERUP_FALL_SPEED = 2.2;
+
+    // 레이저 관련 상수
+    const LASER_WIDTH = 4;
+    const LASER_HEIGHT = 14;
+    const LASER_SPEED = 8;
+    const LASER_COOLDOWN_FRAMES = 18; // 연속 발사 방지 (약 0.3초)
+
+    // requestAnimationFrame은 보통 1초에 약 60번 호출되므로,
+    // "60프레임 = 1초"로 간주해 파워업 지속시간을 표현한다.
+    const POWERUP_TYPES = {
+      wide:  { id: 'wide',  label: 'WIDE',  color: '#34d399', duration: 480 }, // 8초, 패들 길이 증가
+      multi: { id: 'multi', label: 'MULTI', color: '#f472b6', duration: 90 },  // 1.5초, 멀티볼(즉시 효과)
+      slow:  { id: 'slow',  label: 'SLOW',  color: '#60a5fa', duration: 480 }, // 8초, 공 속도 감소
+      life:  { id: 'life',  label: '1UP',   color: '#facc15', duration: 90 },  // 1.5초, 라이프 +1(즉시 효과)
+      laser: { id: 'laser', label: 'LASER', color: '#f87171', duration: 600 }  // 10초, 레이저 패들
+    };
+
+    // ===================================================================
+    // 2. 게임 요소(패들, 공, 벽돌, 이펙트) 상태 정의
+    // ===================================================================
+
+    // 패들 정보
+    const paddle = {
+      width: DEFAULT_PADDLE_WIDTH,
+      height: 14,
+      x: (CANVAS_WIDTH - DEFAULT_PADDLE_WIDTH) / 2,
+      y: CANVAS_HEIGHT - 20,
+      speed: 7,   // 키보드로 이동할 때의 속도
+      dx: 0       // 현재 좌우 이동 방향 (-speed, 0, +speed)
+    };
+
+    // 공 목록 (멀티볼 지원을 위해 배열로 관리)
+    // 각 원소: { radius, x, y, dx, dy }
+    let balls = [];
+
+    // 현재 난이도에 따른 "기준" 속력 (Slow Ball 적용 전 기준값)
+    let ballBaseSpeed = DIFFICULTY_SPEEDS.normal;
+
+    // 벽돌 배치 정보
+    const brickInfo = {
+      rowCount: 5,
+      columnCount: 8,
+      height: 20,
+      padding: 10,
+      offsetTop: 50,
+      offsetLeft: 10,
+      width: 0 // initBricks()에서 캔버스 너비에 맞게 계산됨
+    };
+
+    // 행(row)별 벽돌 그라데이션 색상 (빨강 - 주황 - 노랑 - 초록 - 파랑)
+    const rowGradients = [
+      { top: '#ff8787', bottom: '#e03131' },
+      { top: '#ffc078', bottom: '#e8590c' },
+      { top: '#ffe066', bottom: '#f08c00' },
+      { top: '#8ce99a', bottom: '#2f9e44' },
+      { top: '#74c0fc', bottom: '#1971c2' }
+    ];
+
+    let bricks = []; // bricks[row][col] = { x, y, status, colorTop, colorBottom, hasSparkle }
+
+    // 벽돌이 깨질 때 생기는 반짝이는 파티클들
+    let particles = []; // { x, y, vx, vy, size, color, shape, rotation, rotationSpeed, life }
+
+    // 화면에 떨어지고 있는 파워업 아이템들
+    let powerUpItems = []; // { x, y, width, height, type, wobble }
+
+    // 현재 활성화된 파워업 효과 (key: POWERUP_TYPES의 id)
+    let activePowerUps = {}; // { [id]: { type, remaining } }
+
+    // 레이저 패들에서 발사된 레이저들
+    let lasers = []; // { x, y, width, height }
+    let laserCooldownTimer = 0;
+
+    // ===================================================================
+    // 3. 점수 / 라이프 / 게임 상태 변수
+    // ===================================================================
+    let score = 0;
+    let lives = 3;
+
+    let isRunning = false;   // 게임이 시작된 상태인지
+    let isPaused = false;    // 일시정지 상태인지
+    let isGameOver = false;  // 게임오버 상태인지
+    let isGameClear = false; // 게임클리어 상태인지
+
+    let animationId = null;  // requestAnimationFrame의 id (취소할 때 사용)
+
+    // ===================================================================
+    // 4. 초기화 함수들
+    // ===================================================================
+
+    // 벽돌을 행x열 격자에 맞게 새로 생성한다.
+    function initBricks() {
+      bricks = [];
+
+      // 벽돌 사이의 여백을 고려해 벽돌 하나의 가로 크기를 계산
+      const totalPadding = brickInfo.padding * (brickInfo.columnCount + 1);
+      brickInfo.width = (CANVAS_WIDTH - totalPadding) / brickInfo.columnCount;
+
+      for (let row = 0; row < brickInfo.rowCount; row++) {
+        bricks[row] = [];
+        for (let col = 0; col < brickInfo.columnCount; col++) {
+          const gradient = rowGradients[row % rowGradients.length];
+
+          bricks[row][col] = {
+            x: brickInfo.offsetLeft + col * (brickInfo.width + brickInfo.padding),
+            y: brickInfo.offsetTop + row * (brickInfo.height + brickInfo.padding),
+            status: 1, // 1 = 살아있음, 0 = 깨짐
+            colorTop: gradient.top,
+            colorBottom: gradient.bottom,
+            hasSparkle: Math.random() < 0.12 // 일부 벽돌에만 별 아이콘 표시
+          };
+        }
+      }
+    }
+
+    // 공(1개)과 패들을 화면 중앙/하단의 시작 위치로 되돌리고,
+    // 진행 중이던 파워업/아이템/레이저 효과를 모두 정리한다.
+    function resetBallAndPaddle() {
+      // 패들을 기본 크기로 되돌리고 중앙에 배치
+      paddle.width = DEFAULT_PADDLE_WIDTH;
+      paddle.x = (CANVAS_WIDTH - paddle.width) / 2;
+      paddle.dx = 0;
+
+      // 공을 1개로 초기화
+      const direction = Math.random() < 0.5 ? -1 : 1; // 좌/우 방향 랜덤 결정
+      balls = [{
+        radius: BALL_RADIUS,
+        x: CANVAS_WIDTH / 2,
+        y: CANVAS_HEIGHT - 40,
+        dx: ballBaseSpeed * direction,
+        dy: -ballBaseSpeed // 항상 위쪽으로 시작
+      }];
+
+      // 파워업/파티클/아이템/레이저 상태 초기화
+      particles = [];
+      powerUpItems = [];
+      lasers = [];
+      activePowerUps = {};
+      renderPowerUpBadges();
+    }
+
+    // 점수, 라이프, 벽돌, 공/패들 위치 등 게임 전체를 처음 상태로 초기화
+    function resetGame() {
+      score = 0;
+      lives = 3;
+      isGameOver = false;
+      isGameClear = false;
+
+      ballBaseSpeed = DIFFICULTY_SPEEDS[difficultySelect.value];
+
+      initBricks();
+      resetBallAndPaddle();
+
+      updateScoreDisplay();
+      updateLivesDisplay();
+      hideMessage();
+    }
+
+    // ===================================================================
+    // 5. 화면 표시 갱신 함수
+    // ===================================================================
+    function updateScoreDisplay() {
+      scoreDisplay.textContent = score;
+    }
+
+    function updateLivesDisplay() {
+      livesDisplay.textContent = lives;
+    }
+
+    // 게임오버/클리어 메시지를 화면에 표시
+    function showMessage(title, scoreText) {
+      messageTitle.textContent = title;
+      messageScore.textContent = scoreText;
+      messageOverlay.classList.remove('hidden');
+    }
+
+    // 메시지 화면을 숨김
+    function hideMessage() {
+      messageOverlay.classList.add('hidden');
+    }
+
+    // 현재 활성화된 파워업들을 화면 하단 상태 바에 뱃지로 표시한다.
+    function renderPowerUpBadges() {
+      powerupStatusEl.innerHTML = '';
+
+      for (const id in activePowerUps) {
+        const effect = activePowerUps[id];
+        const seconds = Math.max(1, Math.ceil(effect.remaining / 60)); // 60fps 기준 남은 시간(초)
+
+        const badge = document.createElement('div');
+        badge.className = 'powerup-badge';
+        badge.style.background = effect.type.color;
+        badge.innerHTML =
+          '<span>' + effect.type.label + '</span>' +
+          '<span class="badge-time">' + seconds + 's</span>';
+
+        powerupStatusEl.appendChild(badge);
+      }
+    }
+
+    // ===================================================================
+    // 6. 도형 그리기 보조 함수 (둥근 사각형 / 별)
+    // ===================================================================
+
+    // 모서리가 둥근 사각형 경로를 만든다. (벽돌, 파워업 아이템, 패들에 사용)
+    function drawRoundedRectPath(x, y, width, height, radius) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.arcTo(x + width, y, x + width, y + radius, radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+      ctx.lineTo(x + radius, y + height);
+      ctx.arcTo(x, y + height, x, y + height - radius, radius);
+      ctx.lineTo(x, y + radius);
+      ctx.arcTo(x, y, x + radius, y, radius);
+      ctx.closePath();
+    }
+
+    // 원점을 중심으로 한 5각 별 모양 경로를 만든다. (회전/이동은 호출하는 쪽에서 처리)
+    function drawStarPath(size) {
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const outerAngle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+        const innerAngle = outerAngle + Math.PI / 5;
+
+        const outerX = Math.cos(outerAngle) * size;
+        const outerY = Math.sin(outerAngle) * size;
+        const innerX = Math.cos(innerAngle) * (size / 2);
+        const innerY = Math.sin(innerAngle) * (size / 2);
+
+        if (i === 0) {
+          ctx.moveTo(outerX, outerY);
+        } else {
+          ctx.lineTo(outerX, outerY);
+        }
+        ctx.lineTo(innerX, innerY);
+      }
+      ctx.closePath();
+    }
+
+    // 지정한 위치에 별을 그린다. (벽돌의 스파클 아이콘용)
+    function drawStar(cx, cy, size, color) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      drawStarPath(size);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ===================================================================
+    // 7. 그리기(draw) 함수들
+    // ===================================================================
+
+    // 캔버스를 깨끗하게 지운다.
+    function clearCanvas() {
+      ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
+    // 패들 그리기 (그라데이션 + 둥근 모서리 + 레이저 발사구)
+    function drawPaddle() {
+      const gradient = ctx.createLinearGradient(paddle.x, paddle.y, paddle.x, paddle.y + paddle.height);
+      gradient.addColorStop(0, '#86efac');
+      gradient.addColorStop(1, '#22c55e');
+
+      ctx.fillStyle = gradient;
+      drawRoundedRectPath(paddle.x, paddle.y, paddle.width, paddle.height, paddle.height / 2);
+      ctx.fill();
+
+      // 레이저 패들 파워업이 활성화된 동안 패들 위에 발사구를 표시
+      if (activePowerUps.laser) {
+        ctx.fillStyle = '#f87171';
+        ctx.fillRect(paddle.x + paddle.width * 0.2 - 2, paddle.y - 6, 4, 6);
+        ctx.fillRect(paddle.x + paddle.width * 0.8 - 2, paddle.y - 6, 4, 6);
+      }
+    }
+
+    // 공 그리기 (살짝 입체감 있는 광택 효과)
+    function drawBalls() {
+      balls.forEach((ball) => {
+        const gradient = ctx.createRadialGradient(
+          ball.x - ball.radius * 0.3, ball.y - ball.radius * 0.3, 1,
+          ball.x, ball.y, ball.radius
+        );
+        gradient.addColorStop(0, '#ffffff');
+        gradient.addColorStop(1, '#cbd5e1');
+
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        ctx.closePath();
+      });
+    }
+
+    // 살아있는 벽돌들만 그리기
+    // - 행마다 다른 그라데이션
+    // - 위쪽에 광택(하이라이트) 효과
+    // - 모서리를 살짝 둥글게
+    // - 입체감을 위한 그림자
+    // - 일부 벽돌에는 반짝이는 별 아이콘
+    function drawBricks() {
+      const radius = 4; // 벽돌 모서리 둥글기
+
+      for (let row = 0; row < brickInfo.rowCount; row++) {
+        for (let col = 0; col < brickInfo.columnCount; col++) {
+          const brick = bricks[row][col];
+          if (brick.status !== 1) continue;
+
+          const x = brick.x;
+          const y = brick.y;
+          const w = brickInfo.width;
+          const h = brickInfo.height;
+
+          // 1) 입체감을 위한 그림자 + 그라데이션 채우기
+          ctx.save();
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+          ctx.shadowBlur = 4;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 2;
+
+          const fillGradient = ctx.createLinearGradient(x, y, x, y + h);
+          fillGradient.addColorStop(0, brick.colorTop);
+          fillGradient.addColorStop(1, brick.colorBottom);
+          ctx.fillStyle = fillGradient;
+
+          drawRoundedRectPath(x, y, w, h, radius);
+          ctx.fill();
+          ctx.restore();
+
+          // 2) 위쪽 절반에 반짝이는 광택(하이라이트) 효과
+          ctx.save();
+          drawRoundedRectPath(x, y, w, h, radius);
+          ctx.clip();
+
+          const highlight = ctx.createLinearGradient(x, y, x, y + h * 0.55);
+          highlight.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+          highlight.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          ctx.fillStyle = highlight;
+          ctx.fillRect(x, y, w, h * 0.55);
+          ctx.restore();
+
+          // 3) 일부 벽돌에 반짝이는 별 아이콘 표시
+          if (brick.hasSparkle) {
+            drawStar(x + w - 9, y + 7, 4, 'rgba(255, 255, 255, 0.95)');
+          }
+        }
+      }
+    }
+
+    // 벽돌이 깨질 때 터지는 파티클(작은 사각형/별)을 그린다.
+    function drawParticles() {
+      particles.forEach((p) => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(p.life, 0);
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+
+        if (p.shape === 'star') {
+          drawStarPath(p.size);
+          ctx.fillStyle = p.color;
+          ctx.fill();
+        } else {
+          ctx.fillStyle = p.color;
+          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+        }
+
+        ctx.restore();
+      });
+    }
+
+    // 떨어지고 있는 파워업 아이템(반짝이는 캡슐 모양 + 라벨)을 그린다.
+    function drawPowerUpItems() {
+      powerUpItems.forEach((item) => {
+        const cx = item.x + item.width / 2;
+        const cy = item.y + item.height / 2;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        // 좌우로 살짝 흔들리는 회전 애니메이션
+        ctx.rotate(Math.sin(item.wobble) * 0.25);
+
+        // 반짝이는 glow 효과 (밝기가 주기적으로 변함)
+        ctx.shadowColor = item.type.color;
+        ctx.shadowBlur = 8 + Math.sin(item.wobble * 3) * 4;
+
+        drawRoundedRectPath(-item.width / 2, -item.height / 2, item.width, item.height, item.height / 2);
+        ctx.fillStyle = item.type.color;
+        ctx.fill();
+
+        // 라벨 텍스트
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#1b1b2f';
+        ctx.font = 'bold 11px "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item.type.label, 0, 1);
+
+        ctx.restore();
+      });
+    }
+
+    // 레이저 패들에서 발사된 레이저를 그린다.
+    function drawLasers() {
+      ctx.save();
+      ctx.shadowColor = '#f87171';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = '#fca5a5';
+
+      lasers.forEach((laser) => {
+        ctx.fillRect(laser.x, laser.y, laser.width, laser.height);
+      });
+
+      ctx.restore();
+    }
+
+    // 한 프레임의 모든 요소를 그린다. (그려지는 순서가 곧 쌓이는 순서)
+    function drawScene() {
+      clearCanvas();
+      drawBricks();
+      drawParticles();
+      drawPowerUpItems();
+      drawLasers();
+      drawBalls();
+      drawPaddle();
+    }
+
+    // ===================================================================
+    // 8. 이동 및 충돌 처리 함수들
+    // ===================================================================
+
+    // 키보드 입력(dx)에 따라 패들 위치를 갱신하고, 화면 밖으로 못 나가게 한다.
+    function movePaddle() {
+      paddle.x += paddle.dx;
+
+      if (paddle.x < 0) {
+        paddle.x = 0;
+      }
+      if (paddle.x + paddle.width > CANVAS_WIDTH) {
+        paddle.x = CANVAS_WIDTH - paddle.width;
+      }
+    }
+
+    // 모든 공의 위치를 이동시키고, 벽/패들/바닥과의 충돌을 처리한다.
+    // 멀티볼 상태에서는 공이 여러 개이므로 배열을 순회하며 처리한다.
+    function moveBalls() {
+      for (let i = balls.length - 1; i >= 0; i--) {
+        const ball = balls[i];
+
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        // 좌우 벽에 닿으면 반사
+        if (ball.x + ball.radius > CANVAS_WIDTH || ball.x - ball.radius < 0) {
+          ball.dx *= -1;
+        }
+
+        // 위쪽 벽에 닿으면 반사
+        if (ball.y - ball.radius < 0) {
+          ball.dy *= -1;
+        }
+
+        // 패들과 충돌했는지 확인 (아래로 떨어지는 중일 때만)
+        const hitsPaddle =
+          ball.dy > 0 &&
+          ball.y + ball.radius >= paddle.y &&
+          ball.y + ball.radius <= paddle.y + paddle.height &&
+          ball.x >= paddle.x &&
+          ball.x <= paddle.x + paddle.width;
+
+        if (hitsPaddle) {
+          // 패들의 어느 위치에 맞았는지에 따라 반사 각도를 다르게 한다.
+          // -1(왼쪽 끝) ~ 0(중앙) ~ 1(오른쪽 끝)
+          const hitPosition = (ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2);
+          const maxAngle = Math.PI / 3; // 최대 60도
+          const angle = hitPosition * maxAngle;
+
+          const speed = Math.hypot(ball.dx, ball.dy); // 현재 공의 속력 유지
+          ball.dx = speed * Math.sin(angle);
+          ball.dy = -speed * Math.cos(angle);
+
+          // 공이 패들 안으로 파고들지 않도록 위치 보정
+          ball.y = paddle.y - ball.radius;
+        }
+
+        // 바닥에 떨어진 공은 제거한다 (멀티볼이면 남은 공으로 계속 진행)
+        if (ball.y - ball.radius > CANVAS_HEIGHT) {
+          balls.splice(i, 1);
+        }
+      }
+
+      // 모든 공이 사라졌다면 라이프를 감소시킨다.
+      if (balls.length === 0) {
+        loseLife();
+      }
+    }
+
+    // 모든 공과 벽돌의 충돌을 검사하고, 충돌한 벽돌은 제거 + 점수 증가
+    function checkBrickCollisions() {
+      balls.forEach((ball) => {
+        for (let row = 0; row < brickInfo.rowCount; row++) {
+          for (let col = 0; col < brickInfo.columnCount; col++) {
+            const brick = bricks[row][col];
+            if (brick.status !== 1) continue;
+
+            const isColliding =
+              ball.x + ball.radius > brick.x &&
+              ball.x - ball.radius < brick.x + brickInfo.width &&
+              ball.y + ball.radius > brick.y &&
+              ball.y - ball.radius < brick.y + brickInfo.height;
+
+            if (isColliding) {
+              ball.dy *= -1; // 공 반사
+              destroyBrick(brick);
+              return; // 이 공은 한 프레임에 한 벽돌만 처리
+            }
+          }
+        }
+      });
+    }
+
+    // 벽돌을 제거하고 점수를 올리며, 파티클/파워업 아이템을 생성한다.
+    // (공과의 충돌, 레이저와의 충돌 양쪽에서 공통으로 사용)
+    function destroyBrick(brick) {
+      brick.status = 0; // 벽돌 제거
+      score += 10;
+      updateScoreDisplay();
+
+      spawnBrickParticles(brick);
+      spawnPowerUpItem(brick);
+
+      if (isAllBricksCleared()) {
+        handleGameClear();
+      }
+    }
+
+    // 모든 벽돌이 깨졌는지 확인
+    function isAllBricksCleared() {
+      for (let row = 0; row < brickInfo.rowCount; row++) {
+        for (let col = 0; col < brickInfo.columnCount; col++) {
+          if (bricks[row][col].status === 1) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    // 라이프를 감소시키고, 0이 되면 게임오버, 아니면 공/패들/파워업을 다시 초기화한다.
+    function loseLife() {
+      lives -= 1;
+      updateLivesDisplay();
+
+      if (lives <= 0) {
+        handleGameOver();
+      } else {
+        resetBallAndPaddle();
+      }
+    }
+
+    // ===================================================================
+    // 9. 파티클 효과 (벽돌 파괴 시 반짝이는 조각)
+    // ===================================================================
+
+    // 벽돌이 깨진 위치에서 작은 사각형/별 파티클을 사방으로 흩뿌린다.
+    function spawnBrickParticles(brick) {
+      const centerX = brick.x + brickInfo.width / 2;
+      const centerY = brick.y + brickInfo.height / 2;
+      const colors = [brick.colorTop, brick.colorBottom, '#ffffff'];
+
+      for (let i = 0; i < PARTICLE_COUNT_PER_BRICK; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1 + Math.random() * 3;
+
+        particles.push({
+          x: centerX,
+          y: centerY,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: 2 + Math.random() * 4,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          shape: Math.random() < 0.35 ? 'star' : 'square',
+          rotation: Math.random() * Math.PI * 2,
+          rotationSpeed: (Math.random() - 0.5) * 0.3,
+          life: 1 // 1(완전 불투명) → 0(투명)으로 줄어들며 사라짐
+        });
+      }
+    }
+
+    // 파티클의 위치/회전/투명도를 갱신하고, 다 사라진 파티클은 제거한다.
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.08; // 중력 효과로 점점 아래로 떨어짐
+        p.rotation += p.rotationSpeed;
+        p.life -= 0.03; // 점점 투명해짐
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+    }
+
+    // ===================================================================
+    // 10. 파워업 시스템
+    // ===================================================================
+
+    // 벽돌이 깨질 때 일정 확률로 파워업 아이템을 떨어뜨린다.
+    function spawnPowerUpItem(brick) {
+      if (Math.random() > POWERUP_DROP_CHANCE) return;
+
+      const keys = Object.keys(POWERUP_TYPES);
+      const randomType = POWERUP_TYPES[keys[Math.floor(Math.random() * keys.length)]];
+
+      powerUpItems.push({
+        x: brick.x + brickInfo.width / 2 - POWERUP_ITEM_WIDTH / 2,
+        y: brick.y + brickInfo.height / 2 - POWERUP_ITEM_HEIGHT / 2,
+        width: POWERUP_ITEM_WIDTH,
+        height: POWERUP_ITEM_HEIGHT,
+        type: randomType,
+        wobble: 0
+      });
+    }
+
+    // 파워업 아이템을 아래로 떨어뜨리고, 패들과 충돌하면 효과를 적용한다.
+    function updatePowerUpItems() {
+      for (let i = powerUpItems.length - 1; i >= 0; i--) {
+        const item = powerUpItems[i];
+        item.y += POWERUP_FALL_SPEED;
+        item.wobble += 0.08;
+
+        const hitsPaddle =
+          item.y + item.height >= paddle.y &&
+          item.y <= paddle.y + paddle.height &&
+          item.x + item.width >= paddle.x &&
+          item.x <= paddle.x + paddle.width;
+
+        if (hitsPaddle) {
+          applyPowerUp(item.type);
+          powerUpItems.splice(i, 1);
+          continue;
+        }
+
+        if (item.y > CANVAS_HEIGHT) {
+          powerUpItems.splice(i, 1);
+        }
+      }
+    }
+
+    // 파워업 효과를 적용하고, 상태 표시 바를 갱신한다.
+    function applyPowerUp(type) {
+      switch (type.id) {
+        case 'wide':
+          // 패들 길이 증가 (일정 시간 후 onPowerUpExpire에서 원래 크기로 복귀)
+          paddle.width = WIDE_PADDLE_WIDTH;
+          if (paddle.x + paddle.width > CANVAS_WIDTH) {
+            paddle.x = CANVAS_WIDTH - paddle.width;
+          }
+          activePowerUps.wide = { type: type, remaining: type.duration };
+          break;
+
+        case 'slow':
+          // 슬로우볼: 이미 적용 중이 아니라면 현재 공들의 속도를 한 번만 줄인다.
+          if (!activePowerUps.slow) {
+            balls.forEach((b) => {
+              b.dx *= SLOW_BALL_FACTOR;
+              b.dy *= SLOW_BALL_FACTOR;
+            });
+          }
+          activePowerUps.slow = { type: type, remaining: type.duration };
+          break;
+
+        case 'laser':
+          // 레이저 패들: 지속시간 동안 스페이스바로 레이저 발사 가능
+          activePowerUps.laser = { type: type, remaining: type.duration };
+          break;
+
+        case 'multi':
+          // 멀티볼: 즉시 공을 2~3개로 분리
+          spawnExtraBalls();
+          activePowerUps.multi = { type: type, remaining: type.duration };
+          break;
+
+        case 'life':
+          // 1UP: 즉시 라이프 +1
+          lives += 1;
+          updateLivesDisplay();
+          activePowerUps.life = { type: type, remaining: type.duration };
+          break;
+      }
+
+      renderPowerUpBadges();
+    }
+
+    // 파워업 지속시간이 끝났을 때 원래 상태로 되돌린다.
+    function onPowerUpExpire(id) {
+      if (id === 'wide') {
+        // 패들을 기본 크기로 되돌리고, 화면 밖으로 나가지 않도록 보정
+        paddle.width = DEFAULT_PADDLE_WIDTH;
+        if (paddle.x + paddle.width > CANVAS_WIDTH) {
+          paddle.x = CANVAS_WIDTH - paddle.width;
+        }
+      } else if (id === 'slow') {
+        // 공 속도를 원래대로 복구
+        balls.forEach((b) => {
+          b.dx /= SLOW_BALL_FACTOR;
+          b.dy /= SLOW_BALL_FACTOR;
+        });
+      }
+      // multi, life, laser는 종료 시 별도 처리가 필요 없음
+    }
+
+    // 매 프레임마다 활성화된 파워업의 남은 시간을 줄이고, 만료된 효과를 해제한다.
+    function updatePowerUpEffects() {
+      for (const id in activePowerUps) {
+        activePowerUps[id].remaining -= 1;
+
+        if (activePowerUps[id].remaining <= 0) {
+          onPowerUpExpire(id);
+          delete activePowerUps[id];
+        }
+      }
+
+      // 남은 시간(초) 표시를 갱신하기 위해 매 프레임 다시 그려준다.
+      renderPowerUpBadges();
+    }
+
+    // 멀티볼 파워업: 현재 존재하는 각 공을 좌우 ±30도로 분리해 추가 공을 만든다.
+    function spawnExtraBalls() {
+      const sourceBalls = balls.slice(); // 순회 중 balls가 변경되므로 복사본 사용
+
+      sourceBalls.forEach((b) => {
+        const speed = Math.hypot(b.dx, b.dy);
+        const baseAngle = Math.atan2(b.dy, b.dx);
+
+        [Math.PI / 6, -Math.PI / 6].forEach((angleOffset) => {
+          if (balls.length >= MAX_BALLS) return;
+
+          const angle = baseAngle + angleOffset;
+          balls.push({
+            radius: BALL_RADIUS,
+            x: b.x,
+            y: b.y,
+            dx: speed * Math.cos(angle),
+            dy: speed * Math.sin(angle)
+          });
+        });
+      });
+    }
+
+    // ===================================================================
+    // 11. 레이저 패들
+    // ===================================================================
+
+    // 패들 양쪽에서 레이저 두 발을 발사한다. (쿨다운 동안에는 발사되지 않음)
+    function fireLaser() {
+      if (laserCooldownTimer > 0) return;
+      laserCooldownTimer = LASER_COOLDOWN_FRAMES;
+
+      lasers.push({
+        x: paddle.x + paddle.width * 0.2 - LASER_WIDTH / 2,
+        y: paddle.y - LASER_HEIGHT,
+        width: LASER_WIDTH,
+        height: LASER_HEIGHT
+      });
+      lasers.push({
+        x: paddle.x + paddle.width * 0.8 - LASER_WIDTH / 2,
+        y: paddle.y - LASER_HEIGHT,
+        width: LASER_WIDTH,
+        height: LASER_HEIGHT
+      });
+    }
+
+    // 레이저를 위로 이동시키고, 벽돌과 충돌하면 벽돌을 직접 파괴한다.
+    function updateLasers() {
+      if (laserCooldownTimer > 0) {
+        laserCooldownTimer -= 1;
+      }
+
+      for (let i = lasers.length - 1; i >= 0; i--) {
+        const laser = lasers[i];
+        laser.y -= LASER_SPEED;
+
+        let removed = false;
+
+        for (let row = 0; row < brickInfo.rowCount && !removed; row++) {
+          for (let col = 0; col < brickInfo.columnCount; col++) {
+            const brick = bricks[row][col];
+            if (brick.status !== 1) continue;
+
+            const isColliding =
+              laser.x < brick.x + brickInfo.width &&
+              laser.x + laser.width > brick.x &&
+              laser.y < brick.y + brickInfo.height &&
+              laser.y + laser.height > brick.y;
+
+            if (isColliding) {
+              destroyBrick(brick);
+              lasers.splice(i, 1);
+              removed = true;
+              break;
+            }
+          }
+        }
+
+        if (!removed && laser.y + laser.height < 0) {
+          lasers.splice(i, 1);
+        }
+      }
+    }
+
+    // ===================================================================
+    // 12. 게임 종료/클리어 처리
+    // ===================================================================
+    function handleGameOver() {
+      isRunning = false;
+      isGameOver = true;
+      cancelAnimationFrame(animationId);
+
+      showMessage('Game Over', `최종 점수: ${score}`);
+      clearActivePowerUps();
+
+      startBtn.textContent = '다시 시작';
+      pauseBtn.disabled = true;
+    }
+
+    function handleGameClear() {
+      isRunning = false;
+      isGameClear = true;
+      cancelAnimationFrame(animationId);
+
+      showMessage('Clear!', `최종 점수: ${score}`);
+      clearActivePowerUps();
+
+      startBtn.textContent = '다시 시작';
+      pauseBtn.disabled = true;
+    }
+
+    // 게임 종료/클리어 시 화면에 남아있는 파워업 상태 뱃지를 정리한다.
+    function clearActivePowerUps() {
+      activePowerUps = {};
+      renderPowerUpBadges();
+    }
+
+    // ===================================================================
+    // 13. 메인 게임 루프
+    // ===================================================================
+    function gameLoop() {
+      if (!isRunning || isPaused) return;
+
+      drawScene();
+
+      movePaddle();
+      moveBalls();
+      checkBrickCollisions();
+      updateParticles();
+      updatePowerUpItems();
+      updateLasers();
+      updatePowerUpEffects();
+
+      if (isRunning && !isPaused) {
+        animationId = requestAnimationFrame(gameLoop);
+      }
+    }
+
+    // ===================================================================
+    // 14. 버튼 이벤트 처리
+    // ===================================================================
+
+    // 시작 버튼: 게임을 새로 시작하거나(게임오버/클리어 후), 진행 중인 게임을 이어간다.
+    startBtn.addEventListener('click', () => {
+      if (isGameOver || isGameClear) {
+        resetGame();
+        startBtn.textContent = '시작';
+        pauseBtn.disabled = false;
+      }
+
+      if (!isRunning) {
+        isRunning = true;
+        isPaused = false;
+        pauseBtn.disabled = false;
+        pauseBtn.textContent = '일시정지';
+        gameLoop();
+      }
+    });
+
+    // 일시정지 버튼: 진행 중인 게임을 멈추거나 다시 이어간다.
+    pauseBtn.addEventListener('click', () => {
+      if (!isRunning) return;
+
+      isPaused = !isPaused;
+
+      if (isPaused) {
+        cancelAnimationFrame(animationId);
+        pauseBtn.textContent = '계속하기';
+      } else {
+        pauseBtn.textContent = '일시정지';
+        gameLoop();
+      }
+    });
+
+    // 재시작 버튼: 점수/라이프/벽돌/공/패들/파워업을 모두 초기 상태로 되돌린다.
+    restartBtn.addEventListener('click', () => {
+      cancelAnimationFrame(animationId);
+
+      isRunning = false;
+      isPaused = false;
+
+      startBtn.textContent = '시작';
+      pauseBtn.textContent = '일시정지';
+      pauseBtn.disabled = true;
+
+      resetGame();
+      drawScene();
+    });
+
+    // 난이도 변경: 현재 진행 방향과 슬로우볼 비율은 유지하면서 기준 속력만 조정한다.
+    difficultySelect.addEventListener('change', () => {
+      const newSpeed = DIFFICULTY_SPEEDS[difficultySelect.value];
+      const ratio = newSpeed / ballBaseSpeed;
+
+      balls.forEach((ball) => {
+        ball.dx *= ratio;
+        ball.dy *= ratio;
+      });
+
+      ballBaseSpeed = newSpeed;
+    });
+
+    // ===================================================================
+    // 15. 키보드 / 마우스 입력 처리
+    // ===================================================================
+
+    // 좌우 방향키로 패들 이동, 스페이스바로 레이저 발사
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') {
+        paddle.dx = -paddle.speed;
+        e.preventDefault();
+      } else if (e.key === 'ArrowRight') {
+        paddle.dx = paddle.speed;
+        e.preventDefault();
+      } else if (e.code === 'Space') {
+        // 레이저 패들 파워업이 활성화된 상태에서만 발사 가능
+        if (activePowerUps.laser && isRunning && !isPaused) {
+          fireLaser();
+        }
+        e.preventDefault();
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        paddle.dx = 0;
+      }
+    });
+
+    // 마우스 이동으로 패들 위치 조정
+    // 캔버스의 실제 화면 크기와 내부 해상도(640x480)가 다를 수 있으므로
+    // getBoundingClientRect()를 이용해 좌표를 변환한다.
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = CANVAS_WIDTH / rect.width;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+
+      paddle.x = mouseX - paddle.width / 2;
+
+      if (paddle.x < 0) paddle.x = 0;
+      if (paddle.x + paddle.width > CANVAS_WIDTH) paddle.x = CANVAS_WIDTH - paddle.width;
+    });
+
+    // ===================================================================
+    // 16. 초기 화면 표시
+    // ===================================================================
+    resetGame();
+    drawScene();
+  </script>
+</body>
+</html>
